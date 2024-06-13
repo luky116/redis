@@ -373,7 +373,28 @@ static void resetClient(client c) {
     c->pending = config.pipeline;
 }
 
+
+// 生成随机的key
+static const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_";
+
 static void randomizeClientKey(client c) {
+    size_t i;
+
+    for (i = 0; i < c->randlen; i++) {
+        char *p = c->randptr[i]+11;
+        size_t r = 0;
+        if (config.randomkeys_keyspacelen != 0)
+            r = random() % config.randomkeys_keyspacelen;
+        size_t j;
+
+        for (j = 0; j < 12; j++) {
+            *p = charset[rand() % (sizeof(charset) - 1)];
+            p--;
+        }
+    }
+}
+
+static void randomizeClientKey1(client c) {
     size_t i;
 
     for (i = 0; i < c->randlen; i++) {
@@ -389,6 +410,8 @@ static void randomizeClientKey(client c) {
             p--;
         }
     }
+
+    printf("randomizeClientKey %s\n", c->randlen);
 }
 
 static void setClusterKeyHashTag(client c) {
@@ -1633,6 +1656,35 @@ tls_usage,
     exit(exit_status);
 }
 
+
+char* getFormattedTime(const char* format) {
+    time_t rawtime;
+    struct tm * timeinfo;
+    char* buffer = NULL;
+
+    // 获取当前时间
+    time(&rawtime);
+    timeinfo = localtime(&rawtime);
+
+    // 计算所需缓冲区大小
+    size_t bufferSize = strlen(format) * 5 + 1; // 粗略估计，每个格式符大约需要5个字符空间
+    buffer = (char*)malloc(bufferSize);
+    if (buffer == NULL) {
+        perror("Memory allocation failed");
+        return NULL;
+    }
+
+    // 使用strftime格式化时间
+    size_t resultSize = strftime(buffer, bufferSize, format, timeinfo);
+    if (resultSize == 0) {
+        perror("strftime failed");
+        free(buffer);
+        return NULL;
+    }
+
+    return buffer;
+}
+
 int showThroughput(struct aeEventLoop *eventLoop, long long id, void *clientData) {
     UNUSED(eventLoop);
     UNUSED(id);
@@ -1670,7 +1722,12 @@ int showThroughput(struct aeEventLoop *eventLoop, long long id, void *clientData
     config.previous_tick = current_tick;
     atomicSet(config.previous_requests_finished,requests_finished);
     printf("%*s\r", config.last_printed_bytes, " "); /* ensure there is a clean line */
-    int printed_bytes = printf("%s: rps=%.1f (overall: %.1f) avg_msec=%.3f (overall: %.3f)\r", config.title, instantaneous_rps, rps, hdr_mean(config.current_sec_latency_histogram)/1000.0f, hdr_mean(config.latency_histogram)/1000.0f);
+
+
+    char* currentTimeStr = getFormattedTime("%Y-%m-%d %H:%M:%S");
+
+    int printed_bytes = printf("%s:\t %s\trps\t%.1f\tavg_msec2\t%.3f\n",  config.title,currentTimeStr, instantaneous_rps, hdr_mean(config.current_sec_latency_histogram)/1000.0f);
+    // int printed_bytes = printf("%s: %s\trps=%.1f (overall: %.1f) avg_msec=%.3f (overall: %.3f)\r\n",  config.title,currentTimeStr, instantaneous_rps, rps, hdr_mean(config.current_sec_latency_histogram)/1000.0f, hdr_mean(config.latency_histogram)/1000.0f);
     config.last_printed_bytes = printed_bytes;
     hdr_reset(config.current_sec_latency_histogram);
     fflush(stdout);
